@@ -1,0 +1,220 @@
+import pickle
+from flask import Flask, request, render_template_string
+import numpy as np
+
+app = Flask(__name__)
+
+# Load the trained linear model
+MODEL_PATH = "linear_2.pkl"
+try:
+    with open(MODEL_PATH, "rb") as file:
+        model = pickle.load(file)
+except Exception as e:
+    model = None
+    print(f"Error loading model: {e}")
+
+# HTML Template with modern, attractive styling
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Linear Model Predictor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #6366f1;
+            --primary-hover: #4f46e5;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #1e293b;
+            --border-color: #cbd5e1;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            background-color: var(--card-bg);
+            padding: 2.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+            width: 100%;
+            max-width: 450px;
+            box-sizing: border-box;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-weight: 600;
+            color: #0f172a;
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+
+        p.subtitle {
+            text-align: center;
+            color: #64748b;
+            font-size: 0.9rem;
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        label {
+            display: block;
+            font-weight: 500;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            box-sizing: border-box;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        button {
+            width: 100%;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 0.75rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-top: 0.5rem;
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .result-card {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background-color: #f1f5f9;
+            border-radius: 0.5rem;
+            text-align: center;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .result-card h3 {
+            margin: 0 0 0.25rem 0;
+            font-size: 0.85rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .prediction-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin: 0;
+        }
+
+        .error-msg {
+            color: #ef4444;
+            background-color: #fef2f2;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Model Prediction</h2>
+        <p class="subtitle">Enter the feature values below to get a prediction.</p>
+        
+        {% if error %}
+            <div class="error-msg">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="/">
+            <div class="form-group">
+                <label for="feature1">Feature 1</label>
+                <input type="number" step="any" id="feature1" name="feature1" required value="{{ request.form.get('feature1', '') }}">
+            </div>
+            
+            <div class="form-group">
+                <label for="feature2">Feature 2</label>
+                <input type="number" step="any" id="feature2" name="feature2" required value="{{ request.form.get('feature2', '') }}">
+            </div>
+
+            <div class="form-group">
+                <label for="feature3">Feature 3</label>
+                <input type="number" step="any" id="feature3" name="feature3" required value="{{ request.form.get('feature3', '') }}">
+            </div>
+
+            <button type="submit">Predict</button>
+        </form>
+
+        {% if prediction is not none %}
+            <div class="result-card">
+                <h3>Prediction Result</h3>
+                <p class="prediction-value">{{ prediction }}</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
+"""
+
+@app.route("/", methods=["GET", "POST"])
+def home():
+    prediction = None
+    error = None
+
+    if request.method == "POST":
+        if model is None:
+            error = "Model file could not be loaded."
+        else:
+            try:
+                # Extract features from form inputs and convert to float
+                f1 = float(request.form["feature1"])
+                f2 = float(request.form["feature2"])
+                f3 = float(request.form["feature3"])
+                
+                # Reshape features into a 2D array as expected by scikit-learn models
+                features = np.array([[f1, f2, f3]])
+                
+                # Make prediction
+                pred_value = model.predict(features)
+                
+                # Format output (handle scalar or array outputs nicely)
+                prediction = round(float(pred_value[0]), 4)
+            except Exception as e:
+                error = f"Invalid input or prediction error: {str(e)}"
+
+    return render_template_string(HTML_TEMPLATE, prediction=prediction, error=error)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
